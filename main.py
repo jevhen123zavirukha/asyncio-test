@@ -7,12 +7,13 @@ DB_PATH = "test.db"
 
 
 async def main():
-    # Delete old database file if it exists — start fresh each time
+    # Delete old database file to start fresh (optional)
     if os.path.exists(DB_PATH):
         os.remove(DB_PATH)
 
+    # Connect to SQLite file-based database
     async with aiosqlite.connect(DB_PATH) as db:
-        # Create the table (if it doesn’t exist)
+        # Create table
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,45 +23,45 @@ async def main():
             )
         """)
 
-        # Example data
+        # Example data for names and cities
         names = ["Alice", "Bob", "Charlie", "Diana", "Ethan", "Fiona", "George", "Hannah"]
         cities = ["Prague", "Kyiv", "Warsaw", "Berlin", "Paris", "Madrid", "Rome", "Vienna"]
 
         # Async function to insert one row
-        async def make_request(name, age, city):
+        async def insert_user(name, age, city):
             await db.execute(
                 "INSERT INTO users (name, age, city) VALUES (?, ?, ?)",
                 (name, age, city)
             )
 
-        chunk = 200  # number of tasks to execute at the same time
+        chunk = 200  # Number of tasks to run simultaneously
         tasks = []
         pended = 0
 
-        # Create and insert 1000 records
+        # Insert 1000 random users
         for x in range(1000):
             name = random.choice(names)
-            city = random.choice(cities)
             age = random.randint(15, 70)
-            tasks.append(asyncio.create_task(make_request(name, age, city)))
+            city = random.choice(cities)
+            tasks.append(asyncio.create_task(insert_user(name, age, city)))
             pended += 1
 
-            # 200 tasks -> run them all together
+            # Once we reach chunk size, run all tasks
             if len(tasks) == chunk or pended == 1000:
-                await asyncio.gather(*tasks)  # run 200 inserts in parallel
-                await db.commit()              # save changes to the DB
-                tasks = []                     # clear task list
+                await asyncio.gather(*tasks)
+                await db.commit()  # Save changes to disk
+                tasks = []
                 print(f"{pended} records inserted")
 
-        # Check how many rows are in the table
+        # Check total number of rows in the table
         async with db.execute("SELECT COUNT(*) FROM users") as cursor:
-            count = (await cursor.fetchone())[0]
-            print(f"\ntotal rows in table: {count}")
+            total = (await cursor.fetchone())[0]
+            print(f"\nTotal rows in table: {total}")
 
-        # Display first 5 rows as a preview
+        # Print 5 sample rows
         async with db.execute("SELECT * FROM users LIMIT 5") as cursor:
             async for row in cursor:
                 print(row)
 
-# Run
+# Run the async main function
 asyncio.run(main())
