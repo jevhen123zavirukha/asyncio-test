@@ -2,66 +2,74 @@ import asyncio
 import aiosqlite
 import random
 import os
+import time
 
 DB_PATH = "test.db"
+TOTAL_RECORDS = 1000
+CHUNK_SIZE = 200
+
+
+async def create_table(db):
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            age INTEGER NOT NULL,
+            city TEXT NOT NULL
+        )
+    """)
+
+
+async def insert_user(db, name, age, city):
+    await db.execute(
+        "INSERT INTO users (name, age, city) VALUES (?, ?, ?)",
+        (name, age, city)
+    )
 
 
 async def main():
-    # Delete old database file to start fresh (optional)
+    # Start clean (optional)
     if os.path.exists(DB_PATH):
         os.remove(DB_PATH)
 
-    # Connect to SQLite file-based database
-    async with aiosqlite.connect(DB_PATH) as db:
-        # Create table
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                age INTEGER,
-                city TEXT
-            )
-        """)
+    start_time = time.perf_counter()
 
-        # Example data for names and cities
+    async with aiosqlite.connect(DB_PATH) as db:
+        await create_table(db)
+
         names = ["Alice", "Bob", "Charlie", "Diana", "Ethan", "Fiona", "George", "Hannah"]
         cities = ["Prague", "Kyiv", "Warsaw", "Berlin", "Paris", "Madrid", "Rome", "Vienna"]
 
-        # Async function to insert one row
-        async def insert_user(name, age, city):
-            await db.execute(
-                "INSERT INTO users (name, age, city) VALUES (?, ?, ?)",
-                (name, age, city)
-            )
-
-        chunk = 200  # Number of tasks to run simultaneously
         tasks = []
-        pended = 0
+        inserted = 0
 
-        # Insert 1000 random users
-        for x in range(1000):
+        for _ in range(TOTAL_RECORDS):
             name = random.choice(names)
             age = random.randint(15, 70)
             city = random.choice(cities)
-            tasks.append(asyncio.create_task(insert_user(name, age, city)))
-            pended += 1
+            tasks.append(asyncio.create_task(insert_user(db, name, age, city)))
+            inserted += 1
 
-            # Once we reach chunk size, run all tasks
-            if len(tasks) == chunk or pended == 1000:
+            # Batch commit
+            if len(tasks) == CHUNK_SIZE or inserted == TOTAL_RECORDS:
                 await asyncio.gather(*tasks)
-                await db.commit()  # Save changes to disk
-                tasks = []
-                print(f"{pended} records inserted")
+                await db.commit()
+                tasks.clear()
+                print(f" {inserted}/{TOTAL_RECORDS} records inserted")
 
-        # Check total number of rows in the table
+        # Check total count
         async with db.execute("SELECT COUNT(*) FROM users") as cursor:
             total = (await cursor.fetchone())[0]
-            print(f"\nTotal rows in table: {total}")
+            print(f"\n Total rows in table: {total}")
 
-        # Print 5 sample rows
+        # Show few sample rows
+        print("\n Sample records:")
         async with db.execute("SELECT * FROM users LIMIT 5") as cursor:
             async for row in cursor:
                 print(row)
 
-# Run the async main function
-asyncio.run(main())
+    end_time = time.perf_counter()
+    print(f"\n Completed in {end_time - start_time:.2f} seconds")
+
+if __name__ == "__main__":
+    asyncio.run(main())
